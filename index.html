@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Bloxdy Blockly IDE</title>
+<!-- Blockly CDN -->
+<script src="https://unpkg.com/blockly/blockly.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/blockly/media/blockly.css">
+<style>
+  /* =============================
+     STEPS 1 + 11: Layout + Styles
+     ============================= */
+  html, body { height: 100%; margin: 0; font-family: sans-serif; overflow: hidden; }
+  body.light { background: #f0f0f0; color: #000; }
+  body.dark { background: #1e1e1e; color: #fff; }
+  #toolbar { height: 40px; display: flex; align-items: center; padding: 0 10px; background: #ddd; }
+  body.dark #toolbar { background: #333; }
+  #toolbar button { margin-right: 5px; padding: 5px 10px; cursor: pointer; }
+  #workspaceContainer { position: absolute; top: 40px; left: 0; right: 50%; bottom: 0; }
+  #codeContainer { position: absolute; top: 40px; left: 50%; right: 0; bottom: 0; display: flex; flex-direction: column; }
+  #tabs { display: flex; background: #ccc; }
+  body.dark #tabs { background: #222; }
+  #tabs button { flex: 1; padding: 5px; cursor: pointer; border: none; background: #ccc; }
+  body.dark #tabs button { background: #222; color: #fff; }
+  #tabs button.active { background: #aaa; }
+  body.dark #tabs button.active { background: #555; }
+  #codeArea { flex: 1; width: 100%; padding: 10px; font-family: monospace; overflow: auto; background: #eee; }
+  body.dark #codeArea { background: #1e1e1e; color: #d4d4d4; }
+  #autocompleteBox { position: absolute; background: #fff; border: 1px solid #888; display: none; max-height: 200px; overflow-y: auto; z-index: 999; font-family: monospace; }
+  body.dark #autocompleteBox { background: #333; color: #fff; border-color: #555; }
+  #autocompleteBox .acItem { padding: 2px 5px; cursor: pointer; }
+  #autocompleteBox .acItem.selected { background: #ddd; }
+  body.dark #autocompleteBox .acItem.selected { background: #555; }
+</style>
+</head>
+<body class="light">
+
+  <!-- Toolbar -->
+  <div id="toolbar">
+    <button id="saveBtn">💾 Save</button>
+    <button id="loadBtn">📂 Load</button>
+    <button id="exportBtn">⬇ Export JS</button>
+    <button id="undoBtn">↩ Undo</button>
+    <button id="redoBtn">↪ Redo</button>
+    <button id="themeToggleBtn">🌗 Toggle Theme</button>
+  </div>
+
+  <!-- Workspace -->
+  <div id="workspaceContainer"></div>
+
+  <!-- Code Preview -->
+  <div id="codeContainer">
+    <div id="tabs">
+      <button id="jsTab" class="active">JavaScript</button>
+      <button id="bloxdyTab">Bloxdy Code</button>
+      <button id="consoleTab">Console</button>
+    </div>
+    <textarea id="codeArea" readonly></textarea>
+  </div>
+
+  <div id="autocompleteBox"></div>
+
+  <!-- Toolbox -->
+  <xml id="toolbox" style="display:none"></xml>
+
+  <script>
+    // =========================
+    // STEP 2: Blockly Workspace
+    // =========================
+    const workspace = Blockly.inject('workspaceContainer', {
+      toolbox: document.getElementById('toolbox'),
+      scrollbars: true,
+      trashcan: true
+    });
+
+    // =========================
+    // STEP 4: Tabs + Live Preview
+    // =========================
+    const jsTab = document.getElementById("jsTab");
+    const bloxdyTab = document.getElementById("bloxdyTab");
+    const consoleTab = document.getElementById("consoleTab");
+    const codeArea = document.getElementById("codeArea");
+
+    jsTab.onclick = () => switchTab("js");
+    bloxdyTab.onclick = () => switchTab("bloxdy");
+    consoleTab.onclick = () => switchTab("console");
+
+    function switchTab(tab) {
+        jsTab.classList.remove("active");
+        bloxdyTab.classList.remove("active");
+        consoleTab.classList.remove("active");
+        if(tab==="js") jsTab.classList.add("active");
+        if(tab==="bloxdy") bloxdyTab.classList.add("active");
+        if(tab==="console") consoleTab.classList.add("active");
+        updateCodePreview();
+    }
+
+    let consoleOutput = [];
+    function addToConsole(text){ consoleOutput.push(text); if(consoleOutput.length>200) consoleOutput.shift(); if(consoleTab.classList.contains("active")) codeArea.value = consoleOutput.join("\n"); }
+    console.log = function(...args){ addToConsole(args.join(" ")); }
+
+    function updateCodePreview(){
+        let code = Blockly.JavaScript.workspaceToCode(workspace);
+        if(jsTab.classList.contains("active")) codeArea.value = code;
+        else if(bloxdyTab.classList.contains("active")) codeArea.value = "// Bloxdy Code\n"+code;
+        else if(consoleTab.classList.contains("active")) codeArea.value = consoleOutput.join("\n");
+    }
+    workspace.addChangeListener(()=>updateCodePreview());
+    updateCodePreview();
+
+    // =========================
+    // STEP 5: Save / Load / Autosave / Export
+    // =========================
+    const SAVE_KEY="bloxdy_blockly_workspace";
+    document.getElementById("saveBtn").onclick = ()=>{
+        const xml=Blockly.Xml.workspaceToDom(workspace);
+        localStorage.setItem(SAVE_KEY,Blockly.Xml.domToText(xml));
+        addToConsole("✔ Workspace saved.");
+    };
+    document.getElementById("loadBtn").onclick = ()=>{
+        const saved=localStorage.getItem(SAVE_KEY);
+        if(!saved){ addToConsole("⚠ No saved workspace."); return; }
+        workspace.clear();
+        Blockly.Xml.domToWorkspace(Blockly.Xml.textToDom(saved),workspace);
+        addToConsole("✔ Workspace loaded.");
+    };
+    setInterval(()=>{
+        const xml=Blockly.Xml.workspaceToDom(workspace);
+        localStorage.setItem(SAVE_KEY,Blockly.Xml.domToText(xml));
+    },5000);
+    document.getElementById("exportBtn").onclick = ()=>{
+        const code = Blockly.JavaScript.workspaceToCode(workspace);
+        const blob = new Blob([code],{type:"text/javascript"});
+        const url = URL.createObjectURL(blob);
+        const a=document.createElement("a");
+        a.href=url; a.download="bloxdy_script.js"; a.click();
+        URL.revokeObjectURL(url);
+        addToConsole("⬇ Exported JavaScript.");
+    };
+
+    // =========================
+    // STEP 6: Undo / Redo / Keyboard Shortcuts
+    // =========================
+    document.getElementById("undoBtn").onclick = ()=>{ workspace.undo(false); addToConsole("↩ Undo"); updateCodePreview(); };
+    document.getElementById("redoBtn").onclick = ()=>{ workspace.undo(true); addToConsole("↪ Redo"); updateCodePreview(); };
+    document.addEventListener("keydown",(e)=>{
+        if(e.ctrlKey&&e.key==="z"){ e.preventDefault(); workspace.undo(false); addToConsole("↩ Undo (Ctrl+Z)"); updateCodePreview(); }
+        if(e.ctrlKey&&e.key==="y"){ e.preventDefault(); workspace.undo(true); addToConsole("↪ Redo (Ctrl+Y)"); updateCodePreview(); }
+        if(e.ctrlKey&&e.key==="s"){ e.preventDefault(); const xml=Blockly.Xml.workspaceToDom(workspace); localStorage.setItem(SAVE_KEY,Blockly.Xml.domToText(xml)); addToConsole("💾 Saved (Ctrl+S)"); }
+    });
+
+    // =========================
+    // STEP 7: Theme Toggle
+    // =========================
+    function loadTheme(){ const saved=localStorage.getItem("bloxdy_theme"); if(saved==="dark"){ document.body.classList.remove("light"); document.body.classList.add("dark"); } else{ document.body.classList.remove("dark"); document.body.classList.add("light"); } }
+    loadTheme();
+    document.getElementById("themeToggleBtn").onclick = ()=>{
+        let isDark=document.body.classList.contains("dark");
+        if(isDark){ document.body.classList.remove("dark"); document.body.classList.add("light"); localStorage.setItem("bloxdy_theme","light"); addToConsole("☀ Switched to Light Mode"); }
+        else{ document.body.classList.remove("light"); document.body.classList.add("dark"); localStorage.setItem("bloxdy_theme","dark"); addToConsole("🌙 Switched to Dark Mode"); }
+    };
+
+    // =========================
+    // STEP 3 + 9 + 10: Blocks + API + Events
+    // =========================
+    const BLOXDY_API=[
+        {name:"attemptSpawnMob",params:["name","x","y","z","options"],color:"#ff5722"},
+        {name:"setMobSetting",params:["mob","settingName","value"],color:"#ff5722"},
+        {name:"getEntityName",params:["playerId"],color:"#03a9f4"},
+        {name:"getPlayerTargetInfo",params:["playerId"],color:"#03a9f4"},
+        {name:"getHeldItem",params:["playerId"],color:"#8bc34a"},
+        {name:"sendMessage",params:["playerId","text"],color:"#cddc39"},
+        {name:"log",params:["text"],color:"#9e9e9e"}
+    ];
+    const BLOXDY_EVENTS=["tick","onClose","onPlayerJoin","onPlayerLeave","onPlayerJump","onRespawnRequest","playerCommand","onPlayerChat","onPlayerChangeBlock","onPlayerDropItem","onPlayerPickedUpItem","onPlayerSelectInventorySlot","onBlockStand","onPlayerAttemptCraft","onPlayerCraft","onPlayerAttemptOpenChest","onPlayerOpenedChest","onPlayerMoveItemOutOfInventory","onPlayerMoveInvenItem","onPlayerMoveItemIntoIdxs","onPlayerSwapInvenSlots","onPlayerMoveInvenItemWithAmt","onPlayerAttemptAltAction","onPlayerAltAction","onPlayerClick","onClientOptionUpdated","onMobSettingUpdated","onInventoryUpdated","onChestUpdated","onWorldChangeBlock","onCreateBloxdMeshEntity","onEntityCollision","onPlayerAttemptSpawnMob","onWorldAttemptSpawnMob","onPlayerSpawnMob","onWorldSpawnMob","onWorldAttemptDespawnMob","onMobDespawned","onPlayerAttack","onPlayerDamagingOtherPlayer","onPlayerDamagingMob","onMobDamagingPlayer","onMobDamagingOtherMob","onAttemptKillPlayer","onPlayerKilledOtherPlayer","onMobKilledPlayer","onPlayerKilledMob","onMobKilledOtherMob","onPlayerPotionEffect","onPlayerDamagingMeshEntity","onPlayerBreakMeshEntity","onPlayerUsedThrowable","onPlayerThrowableHitTerrain","onTouchscreenActionButton","onTaskClaimed","onChunkLoaded","onPlayerRequestChunk","onItemDropCreated","onPlayerStartChargingItem","onPlayerFinishChargingItem","doPeriodicSave"];
+
+    // API Blocks
+    BLOXDY_API.forEach(api=>{
+        const blockName=`bloxdy_${api.name}`;
+        Blockly.Blocks[blockName]={init:function(){ this.setColour(api.color); this.appendDummyInput().appendField("api."+api.name); api.params.forEach(p=>this.appendValueInput(p).setCheck(null).appendField(p+":")); this.setPreviousStatement(true,null); this.setNextStatement(true,null); }};
+        Blockly.JavaScript[blockName]=function(block){ const values=api.params.map(param=>Blockly.JavaScript.valueToCode(block,param,Blockly.JavaScript.ORDER_ATOMIC)||"null"); return `api.${api.name}(${values.join(", ")});\n`; };
+    });
+
+    // Event Blocks
+    BLOXDY_EVENTS.forEach(eventName=>{
+        const blockName=`event_${eventName}`;
+        Blockly.Blocks[blockName]={init:function(){ this.setColour("#2196f3"); this.appendDummyInput().appendField(eventName+" event"); this.appendStatementInput("HANDLER").appendField("do"); }};
+        Blockly.JavaScript[blockName]=function(block){ const statements=Blockly.JavaScript.statementToCode(block,"HANDLER"); return `${eventName}=()=>{\n${statements}};\n\n`; };
+    });
+
+    // Add API + Event Categories to Toolbox
+    function populateToolbox(){
+        const toolbox=document.getElementById("toolbox");
+        const catAPI=document.createElement("category"); catAPI.setAttribute("name","Bloxdy API"); catAPI.setAttribute("colour","#FF9800");
+        BLOXDY_API.forEach(api=>{const b=document.createElement("block");b.setAttribute("type",`bloxdy_${api.name}`); catAPI.appendChild(b);}); toolbox.appendChild(catAPI);
+        const catEV=document.createElement("category"); catEV.setAttribute("name","Events"); catEV.setAttribute("colour","#2196F3");
+        BLOXDY_EVENTS.forEach(ev=>{const b=document.createElement("block");b.setAttribute("type",`event_${ev}`); catEV.appendChild(b);}); toolbox.appendChild(catEV);
+    }
+    populateToolbox();
+
+    // =========================
+    // STEP 11: Autocomplete Engine
+    // =========================
+    const blockyAPI=BLOXDY_API.map(a=>a.name);
+    const acBox=document.getElementById("autocompleteBox");
+    let acVisible=false,acIndex=0;
+    function getCurrentWord(text,pos){ let start=pos; while(start>0&&/\w/.test(text[start-1]))start--; let end=pos; while(end<text.length&&/\w/.test(text[end]))end++; return {word:text.slice(start,end),start:start,end:end}; }
+    editor.addEventListener("input",()=>{
+        const pos=editor.selectionStart; const info=getCurrentWord(editor.value,pos);
+        if(info.word.length===0){ acBox.style.display="none"; acVisible=false; return; }
+        const results=blockyAPI.filter(x=>x.toLowerCase().startsWith(info.word.toLowerCase()));
+        if(results.length===0){ acBox.style.display="none"; acVisible=false; return; }
+        acBox.innerHTML=""; results.forEach((res,i)=>acBox.innerHTML+=`<div class="acItem ${i===0?'selected':''}">${res}</div>`);
+        acBox.style.display="block"; acVisible=true; acIndex=0; positionAutocomplete();
+    });
+    function positionAutocomplete(){ const rect=editor.getBoundingClientRect(); acBox.style.left=rect.left+"px"; acBox.style.top=(rect.top+window.scrollY+40)+"px"; }
+    editor.addEventListener("keydown",(e)=>{
+        if(!acVisible) return; const items=[...acBox.querySelectorAll(".acItem")];
+        if(e.key==="ArrowDown"){ e.preventDefault(); items[acIndex].classList.remove("selected"); acIndex=(acIndex+1)%items.length; items[acIndex].classList.add("selected"); }
+        if(e.key==="ArrowUp"){ e.preventDefault(); items[acIndex].classList.remove("selected"); acIndex=(acIndex-1+items.length)%items.length; items[acIndex].classList.add("selected"); }
+        if(e.key==="Tab"||e.key==="Enter"){ e.preventDefault(); chooseAutocomplete(items[acIndex].textContent); }
+        if(e.key==="Escape"){ acBox.style.display="none"; acVisible=false; }
+    });
+    function chooseAutocomplete(word){ const pos=editor.selectionStart; const info=getCurrentWord(editor.value,pos); editor.value=editor.value.slice(0,info.start)+word+editor.value.slice(info.end); editor.selectionStart=editor.selectionEnd=info.start+word.length; acBox.style.display="none"; acVisible=false; }
+
+  </script>
+</body>
+</html>
